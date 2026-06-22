@@ -493,26 +493,34 @@ with tab_transmission:
             sent_before = st.session_state.send_status.get(company)
             status_tag = " :: SENT" if sent_before is True else (" :: FAILED" if sent_before is False else "")
 
+            # Extract subject from LLM email if it starts with Subject:
+            email_lines = email_text.strip().splitlines()
+            extracted_subject = ""
+            email_body = email_text
+            if email_lines and email_lines[0].lower().startswith("subject:"):
+                extracted_subject = email_lines[0][len("subject:"):].strip()
+                email_body = "\n".join(email_lines[1:]).strip()
+
             with st.expander(f"PAYLOAD: {company.upper()}{status_tag}"):
                 recipient = st.text_input(
                     "Recipient Email",
                     value=recipient_map.get(company, ""),
                     key=f"recip_{company}"
                 )
-                final_subject = subject_template.replace("{company}", company)
-                st.markdown(f"**SUBJECT:** `{final_subject}`")
+                final_subject = extracted_subject or subject_template.replace("{company}", company)
+                edited_subject = st.text_input("Subject", value=final_subject, key=f"subj_{company}")
                 edited_email = st.text_area(
                     "BODY",
-                    value=email_text,
-                    height=200,
+                    value=email_body,
+                    height=280,
                     key=f"body_{company}"
                 )
 
                 has_smtp = bool(profile.senderEmail and profile.smtpPassword)
                 
                 if not has_smtp:
-                    st.info("SMTP Credentials missing. Copy the email above and send it manually via your email client.")
-                    st.code(f"To: {recipient}\\nSubject: {final_subject}\\n\\n{edited_email}", language="text")
+                    st.info("SMTP not configured. Copy the ready-to-send email below.")
+                    st.code(f"To: {recipient}\nSubject: {edited_subject}\n\n{edited_email}", language="text")
                 else:
                     send_this = st.checkbox("Include in batch transmission", value=select_all, key=f"sel_{company}")
 
@@ -527,7 +535,7 @@ with tab_transmission:
                                     sender_email=profile.senderEmail,
                                     sender_password=profile.smtpPassword,
                                     recipient_email=recipient,
-                                    subject=final_subject,
+                                    subject=edited_subject,
                                     body=edited_email
                                 )
                             st.session_state.send_status[company] = ok

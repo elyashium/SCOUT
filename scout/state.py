@@ -18,7 +18,7 @@ class CompanySpend(BaseModel):
     totalCostUSD: float = 0.0
     tokensUsed: Dict[str, int] = {"input": 0, "output": 0}
     budgetStatus: Literal["within", "warned", "exceeded", "skipped", "pending"] = "pending"
-    decision: Literal["continued", "summarised_early", "skipped", "pending"] = "pending"
+    decision: Literal["continue", "summarise_early", "skipped", "pending"] = "pending"
     researchQuality: Literal["rich", "sparse", "failed", "pending"] = "pending"
     email: Optional[str] = None
     signals: List[str] = []

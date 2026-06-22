@@ -25,6 +25,13 @@ def run_scout(companies: list, global_budget_usd: float = 0.10, per_company_cap_
         built = build_persona_prompt(profile)
         if built:
             persona_override = built
+            
+    for file_to_clear in ["scout_ledger.json", "scout_emails.json"]:
+        if os.path.exists(file_to_clear):
+            try:
+                os.remove(file_to_clear)
+            except Exception:
+                pass
         
     app = build_scout_graph()
     

@@ -8,34 +8,31 @@ class ValidationResult(BaseModel):
 def validate_email(email: str, signals: List[str]) -> ValidationResult:
     errors = []
     
-    # 1. Under 100 words
+    # 1. Reasonable length — max 250 words
     word_count = len(email.split())
-    if word_count > 100:
-        errors.append(f"Email is too long ({word_count} words). Must be under 100 words.")
+    if word_count > 250:
+        errors.append(f"Email is too long ({word_count} words). Must be under 250 words.")
         
-    # 2. No banned phrases
+    # 2. No banned fluff phrases
     email_lower = email.lower()
     if "passionate about" in email_lower:
         errors.append("Contains banned phrase: 'passionate about'.")
     if "excited to" in email_lower:
         errors.append("Contains banned phrase: 'excited to'.")
-    
-    # 3. No em dashes
-    if "—" in email or "--" in email:
-        errors.append("Contains banned em dashes ('—' or '--').")
+    if "hope this finds you" in email_lower:
+        errors.append("Contains banned phrase: 'hope this finds you'.")
         
-    # 4. No exclamation marks
+    # 3. No exclamation marks
     if "!" in email:
         errors.append("Contains exclamation mark '!'.")
         
-    # 5. All lowercase
-    if any(c.isupper() for c in email):
-        errors.append("Contains uppercase letters. Must be entirely lowercase.")
+    # 4. Must have a Subject line
+    if not email.lower().startswith("subject:"):
+        errors.append("Email must begin with 'Subject: <subject line>'.")
         
-    # 6. Must reference a signal
+    # 5. Must reference a signal (if signals exist)
     signal_referenced = False
     if not signals:
-        # If no signals were found during research, we skip this check
         signal_referenced = True
     else:
         for signal in signals:
@@ -54,6 +51,6 @@ def validate_email(email: str, signals: List[str]) -> ValidationResult:
                     break
                     
         if not signal_referenced:
-            errors.append("Email does not seem to explicitly reference any of the provided signals.")
+            errors.append("Email does not reference any of the research signals.")
             
     return ValidationResult(is_valid=len(errors) == 0, errors=errors)

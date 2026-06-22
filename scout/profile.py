@@ -39,28 +39,36 @@ def build_persona_prompt(profile: UserProfile) -> str:
     if not profile.name:
         return ""
 
-    first_name = (profile.firstName or profile.name.split()[0]).lower()
+    first_name = (profile.firstName or profile.name.split()[0])
 
-    intro = f"you are writing a cold outreach email on behalf of {profile.name.lower()}"
+    lines = []
+    lines.append(f"Candidate Name: {profile.name}")
     if profile.title:
-        intro += f", a {profile.title.lower()}"
+        lines.append(f"Role/Title: {profile.title}")
     if profile.institution:
-        intro += f" at {profile.institution.lower()}"
+        lines.append(f"Institution/Current Company: {profile.institution}")
     if profile.graduatingYear:
-        intro += f", graduating {profile.graduatingYear}"
-    intro += "."
+        lines.append(f"Graduating Year: {profile.graduatingYear}")
 
-    lines = [intro, "", f"{first_name}'s credentials:"]
-    for cred in profile.credentials:
-        if cred.strip():
-            lines.append(f"- {cred.strip()}")
+    if profile.credentials:
+        lines.append("\nKey Credentials & Achievements:")
+        for cred in profile.credentials:
+            if cred.strip():
+                lines.append(f"  - {cred.strip()}")
 
-    link_parts = []
+    contact_parts = []
+    if profile.senderEmail:
+        contact_parts.append(f"Email: {profile.senderEmail}")
+    if profile.mobileNumber:
+        contact_parts.append(f"Phone: {profile.mobileNumber}")
     if profile.github:
-        link_parts.append(f"github: {profile.github}")
+        contact_parts.append(f"GitHub: {profile.github}")
     if profile.linkedin:
-        link_parts.append(f"linkedin: {profile.linkedin}")
-    if link_parts:
-        lines.append(f"- {' | '.join(link_parts)}")
+        contact_parts.append(f"LinkedIn: {profile.linkedin}")
+
+    if contact_parts:
+        lines.append("\nContact Details:")
+        for cp in contact_parts:
+            lines.append(f"  {cp}")
 
     return "\n".join(lines)
