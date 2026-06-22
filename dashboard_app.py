@@ -6,6 +6,10 @@ import sys
 import pandas as pd
 import time
 import threading
+from dotenv import load_dotenv
+
+ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+load_dotenv(dotenv_path=ENV_PATH, override=True)
 
 from scout.profile import UserProfile, load_profile, save_profile, build_persona_prompt
 from scout.companies import load_companies, save_companies
@@ -206,7 +210,11 @@ def extract_profile_from_resume(text: str) -> dict:
     if not LANGCHAIN_AVAILABLE:
         return {}
     try:
-        llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0)
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            st.error("GROQ_API_KEY not found in environment.")
+            return {}
+        llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0, api_key=api_key)
         prompt = f"""
         Extract the following information from the resume text into a JSON object.
         Keys required:

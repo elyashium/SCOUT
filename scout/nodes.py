@@ -101,6 +101,7 @@ async def researcher_node(state: AgentState) -> Dict[str, Any]:
         temperature=0.5,
         max_tokens=8192,
         top_p=1,
+        api_key=os.environ.get("GROQ_API_KEY")
     )
     
     prompt = f"""
@@ -256,6 +257,7 @@ Key Intelligence / Job Signals: {json.dumps(high_conf_signals)}
         temperature=1,
         max_tokens=max_tokens,
         top_p=1,
+        api_key=os.environ.get("GROQ_API_KEY")
     )
     llm_with_tools = llm.bind_tools([check_remaining_budget])
     
