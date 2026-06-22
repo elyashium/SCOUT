@@ -20,11 +20,9 @@ from scout.utils import with_retry
 from scout.validators import validate_email
 
 def planner_node(state: AgentState) -> Dict[str, Any]:
-    # Increment at the very start to control the loop
     current_index = state.get("currentIndex", 0)
     
     if current_index >= len(state["companies"]):
-        # Safe fallback, graph logic should prevent this
         return {"plannerDecision": "skip"}
         
     current_company = state["companies"][current_index]
@@ -33,7 +31,6 @@ def planner_node(state: AgentState) -> Dict[str, Any]:
     ledger = state["spendLedger"]
     remaining_global = ledger.globalBudgetUSD - ledger.totalSpentUSD
     
-    # Calculate rolling average cost of processed companies
     costs = [c.totalCostUSD for c in ledger.ledger.values() if c.totalCostUSD > 0]
     rolling_avg_cost = sum(costs) / len(costs) if costs else 0.0
     
@@ -58,17 +55,19 @@ def planner_node(state: AgentState) -> Dict[str, Any]:
 async def researcher_node(state: AgentState) -> Dict[str, Any]:
     spend = state["currentCompanySpend"]
     company_name = state["currentCompany"]["name"]
-    industry = state["currentCompany"].get("industry", "")
     decision = state["plannerDecision"]
+    
+    profile = load_profile()
+    job_title = profile.title if profile.title else "software engineer"
     
     tavily_client = TavilyClient(api_key=os.environ.get("TAVILY_API_KEY", ""))
     
     queries = [
-        f'"{company_name}" {industry} recent news OR funding OR product launch 2024 2025',
-        f'"{company_name}" {industry} engineering OR technical stack OR developer'
+        f'"{company_name}" company overview what they do product',
+        f'"{company_name}" careers jobs "{job_title}" OR engineer OR developer'
     ]
     if decision == "full_research":
-        queries.append(f'"{company_name}" {industry} founder OR CEO OR leadership team')
+        queries.append(f'"{company_name}" team OR culture OR "who we are"')
         
     search_results = []
     search_cost = 0.0
@@ -77,7 +76,6 @@ async def researcher_node(state: AgentState) -> Dict[str, Any]:
     for q in queries:
         try:
             async def _search():
-                # Tavily Python client blocks, running it directly for simplicity here
                 return tavily_client.search(query=q, max_results=3)
                 
             res = await with_retry(_search)
@@ -100,17 +98,22 @@ async def researcher_node(state: AgentState) -> Dict[str, Any]:
         
     llm = ChatGroq(
         model="openai/gpt-oss-20b",
-        temperature=1,
+        temperature=0.5,
         max_tokens=8192,
         top_p=1,
-        model_kwargs={"reasoning_effort": "medium"}
     )
     
     prompt = f"""
-    You are a researcher. Analyze these search results for {company_name}.
-    1. Summarise findings in under 200 words.
-    2. Extract key signals as a JSON list.
-    3. Score each signal's confidence 0-1 based on how explicitly it appeared (1.0 = direct quote, 0.5 = inference).
+    You are a career researcher. Analyze these web search results for "{company_name}".
+    Your goal is to extract intelligence that will be used to write a highly targeted cold email or DM for a candidate seeking a "{job_title}" position.
+
+    Tasks:
+    1. Summarise the company's core product and mission in under 150 words.
+    2. Extract key signals as a JSON list of strings. Focus on:
+       - Specific job openings mentioned (especially related to "{job_title}").
+       - Recent product launches or company milestones.
+       - Engineering stack or technical details.
+    3. Score each signal's confidence 0-1 based on how explicitly it appeared (1.0 = direct quote/link, 0.5 = inference).
     
     Return ONLY a valid JSON object with keys: "summary" (string), "signals" (list of strings), "signalConfidence" (list of floats).
     
@@ -202,27 +205,16 @@ async def writer_node(state: AgentState) -> Dict[str, Any]:
         spend.email = None
         return {"currentCompanySpend": spend, "email": None, "errors": errors}
         
-    max_tokens = 150 if decision == "summarise_early" else 300
+    max_tokens = 250 if decision == "summarise_early" else 400
     
     high_conf_signals = []
     for sig, conf in zip(spend.signals, spend.signalConfidence):
         if conf >= 0.6:
             high_conf_signals.append(sig)
             
-    # Load persona dynamically from scout_profile.json
-    # Falls back to hardcoded Ashish Singh credentials if no profile is saved
     profile = load_profile()
     dynamic_persona = build_persona_prompt(profile)
-    hardcoded_fallback = (
-        "you are writing a cold outreach email on behalf of ashish singh, "
-        "a final year software engineering student at gl bajaj institute of technology (noida), graduating 2027.\n\n"
-        "ashish's credentials:\n"
-        "- built paramountmerchantnavy.com: production edtech platform, 10,000+ maritime students, next.js 14 + supabase, solo\n"
-        "- built nerv (nerv-theta.vercel.app): national hackathon winner (160+ teams, microsoft and salesforce judges), ai interview platform with langgraph agents + rag + fine-tuned llama 3.1, now implemented at college level\n"
-        "- built parity (github.com/parity-guidewiredevtrails-26/parity): parametric insurance platform, golang microservices + xgboost ml + react native, national hackathon winner\n"
-        "- built skydra: autonomous two-drone system for nidar 2025, cuda-accelerated yolov8 + sensor fusion\n"
-        "- github: github.com/elyashium | linkedin: linkedin.com/in/ashish-singh-5818a6274"
-    )
+    hardcoded_fallback = "you are writing a cold outreach email to apply for a role."
     persona = state.get("persona_override") or dynamic_persona or hardcoded_fallback
     
     system_prompt = f"""
@@ -230,17 +222,18 @@ async def writer_node(state: AgentState) -> Dict[str, Any]:
 
 rules:
 - all lowercase, no em dashes, no exclamation marks
-- first line must reference a specific signal from the company research (not generic)
-- maximum 100 words total
-- end with a specific ask (not "would love to connect")
+- first line must reference a specific signal from the company research (e.g. a recent product launch or a relevant job opening).
+- explain why your background (from credentials) is highly relevant to their company and the job role.
+- maximum 150 words total
+- end with a specific ask for a brief chat or interview (not "would love to connect")
 - do not mention "passionate about" or "excited to"
 - the check_remaining_budget tool is available — call it if you need to decide whether to add another paragraph
 """
 
     human_prompt = f"""
 Write an email to {spend.companyName}.
-Summary of company: {state['summary']}
-High confidence signals to use: {json.dumps(high_conf_signals)}
+Company Background: {state['summary']}
+Key Intelligence / Job Signals: {json.dumps(high_conf_signals)}
     """
     
     cap = state["spendLedger"].perCompanyCapUSD
@@ -250,8 +243,6 @@ High confidence signals to use: {json.dumps(high_conf_signals)}
     def check_remaining_budget() -> dict:
         """
         Returns current spend status for this company.
-        The model calls this during generation to decide
-        whether to add more personalisation paragraphs.
         """
         remaining = cap - current_spend
         return {
@@ -265,7 +256,6 @@ High confidence signals to use: {json.dumps(high_conf_signals)}
         temperature=1,
         max_tokens=max_tokens,
         top_p=1,
-        model_kwargs={"reasoning_effort": "medium"}
     )
     llm_with_tools = llm.bind_tools([check_remaining_budget])
     
@@ -337,7 +327,6 @@ def spend_logger_node(state: AgentState) -> Dict[str, Any]:
     
     spend.totalCostUSD = spend.searchCostUSD + spend.summaryCostUSD + spend.emailCostUSD
     
-    # Read-modify-write for scout_ledger.json
     ledger_file = "scout_ledger.json"
     existing_data = {}
     if os.path.exists(ledger_file):

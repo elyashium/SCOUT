@@ -17,6 +17,13 @@ try:
 except ImportError:
     PDF_AVAILABLE = False
 
+try:
+    from langchain_groq import ChatGroq
+    from langchain_core.messages import HumanMessage, SystemMessage
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    LANGCHAIN_AVAILABLE = False
+
 # ─── Page Config ────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="SCOUT Terminal",
@@ -38,11 +45,31 @@ html, body, [class*="css"], .stApp, [data-testid="stAppViewContainer"] {
     font-size: 13px !important;
 }
 
-/* Hide default streamlit chrome */
 #MainMenu, footer, header { visibility: hidden; }
 
-/* Typography */
-h1, h2, h3, h4, h5, h6, p, span, label, li, div {
+/* Navbar Tabs styling */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 16px;
+    background-color: #1a1c1f;
+    padding: 10px 20px;
+    border-radius: 4px;
+    border: 1px solid rgba(22, 163, 74, 0.2);
+}
+.stTabs [data-baseweb="tab"] {
+    padding: 8px 16px;
+    color: #6b8273 !important;
+    border: none;
+    font-weight: 500;
+    font-family: 'Fira Code', 'Consolas', monospace !important;
+    letter-spacing: 1px;
+}
+.stTabs [aria-selected="true"] {
+    background-color: rgba(22, 163, 74, 0.1) !important;
+    color: #16a34a !important;
+    border-bottom: 2px solid #16a34a !important;
+}
+
+h1, h2, h3, h4, h5, h6, p, label, li {
     font-family: 'Fira Code', 'Consolas', monospace !important;
 }
 
@@ -55,7 +82,6 @@ h1, h2, h3 {
     letter-spacing: 1px;
 }
 
-/* Labels and muted text */
 .stTextInput label, .stTextArea label, .stSelectbox label, .stNumberInput label {
     color: #6b8273 !important;
     font-size: 11px !important;
@@ -64,11 +90,8 @@ h1, h2, h3 {
     letter-spacing: 0.5px;
 }
 
-/* Inputs & Textareas */
-.stTextInput > div > div > input,
-.stTextArea > div > div > textarea,
-.stSelectbox > div > div > div,
-.stNumberInput > div > div > input {
+/* Specific targeting to avoid breaking stSelectbox SVG inner elements */
+input[type="text"], input[type="number"], input[type="password"], textarea, [data-baseweb="select"] {
     background-color: #1a1c1f !important;
     border: 1px solid rgba(22, 163, 74, 0.3) !important;
     border-radius: 4px !important;
@@ -77,13 +100,12 @@ h1, h2, h3 {
     padding: 8px 12px !important;
     transition: all 0.2s ease !important;
 }
-.stTextInput > div > div > input:focus,
-.stTextArea > div > div > textarea:focus {
+
+input:focus, textarea:focus {
     border-color: #16a34a !important;
     box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.1) !important;
 }
 
-/* Buttons */
 .stButton > button {
     background-color: #1a1c1f !important;
     color: #16a34a !important;
@@ -111,7 +133,6 @@ h1, h2, h3 {
     box-shadow: 0 4px 12px rgba(22, 163, 74, 0.2) !important;
 }
 
-/* Expanders */
 .streamlit-expanderHeader {
     background-color: #1a1c1f !important;
     border: 1px solid rgba(22, 163, 74, 0.2) !important;
@@ -131,7 +152,6 @@ h1, h2, h3 {
     padding: 16px !important;
 }
 
-/* Dataframe */
 [data-testid="stTable"], .stDataFrame { 
     background-color: #1a1c1f !important;
     border: 1px solid rgba(22, 163, 74, 0.2) !important;
@@ -139,16 +159,13 @@ h1, h2, h3 {
     font-size: 12px !important;
 }
 
-/* Dividers */
 hr { border-color: rgba(22, 163, 74, 0.2) !important; margin: 24px 0 !important; }
 
-/* Alerts */
 .stSuccess { background: rgba(22, 163, 74, 0.05) !important; border: 1px solid rgba(22, 163, 74, 0.3) !important; border-radius: 4px !important; color: #16a34a !important; font-size: 12px !important; }
 .stError   { background: rgba(239, 68, 68, 0.05) !important; border: 1px solid rgba(239, 68, 68, 0.3) !important; border-radius: 4px !important; color: #ef4444 !important; font-size: 12px !important; }
 .stWarning { background: rgba(245, 158, 11, 0.05) !important; border: 1px solid rgba(245, 158, 11, 0.3) !important; border-radius: 4px !important; color: #f59e0b !important; font-size: 12px !important; }
 .stInfo    { background: rgba(59, 130, 246, 0.05) !important; border: 1px solid rgba(59, 130, 246, 0.3) !important; border-radius: 4px !important; color: #3b82f6 !important; font-size: 12px !important; }
 
-/* Custom Markdown Blocks */
 pre, code {
     background-color: #15171a !important;
     border: 1px solid rgba(22, 163, 74, 0.2) !important;
@@ -158,7 +175,6 @@ pre, code {
     font-size: 12px !important;
 }
 
-/* Fix weird streamlit padding/margins */
 [data-testid="stVerticalBlock"] > div {
     padding-bottom: 4px !important;
 }
@@ -186,34 +202,91 @@ def load_json(path):
             pass
     return {}
 
+def extract_profile_from_resume(text: str) -> dict:
+    if not LANGCHAIN_AVAILABLE:
+        return {}
+    try:
+        llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0)
+        prompt = f"""
+        Extract the following information from the resume text into a JSON object.
+        Keys required:
+        - "name": full name
+        - "title": current or target job title
+        - "institution": current company or university
+        - "graduatingYear": year of graduation if applicable
+        - "github": github url
+        - "linkedin": linkedin url
+        - "credentials": list of top 3-5 impressive projects, achievements, or roles (max 15 words each)
+
+        Return ONLY valid JSON.
+        Resume:
+        {text[:5000]}
+        """
+        response = llm.invoke([HumanMessage(content=prompt)])
+        content = response.content
+        if content.startswith("```json"):
+            content = content[7:-3]
+        elif content.startswith("```"):
+            content = content[3:-3]
+        return json.loads(content)
+    except Exception as e:
+        st.error(f"Failed to parse resume with AI: {e}")
+        return {}
+
 
 # ─── Header ──────────────────────────────────────────────────────────────────────
 st.markdown("""
-<div style='text-align:left; padding: 10px 0 20px 0; border-bottom: 1px solid rgba(22, 163, 74, 0.2); margin-bottom: 24px;'>
+<div style='text-align:left; padding: 10px 0 10px 0; border-bottom: 1px solid rgba(22, 163, 74, 0.2); margin-bottom: 16px;'>
     <p style='font-size:24px; font-weight:600; margin:0; letter-spacing:2px; color:#16a34a;'>SCOUT <span style='color:#6b8273; font-weight:400;'>// SYSTEM CONTROL</span></p>
     <p style='font-size:11px; margin:4px 0 0; letter-spacing:1px; color:#6b8273; text-transform: uppercase;'>Spend-Conscious Outreach & Understanding Tool</p>
 </div>
 """, unsafe_allow_html=True)
 
-# ─── Main Single Page Layout ──────────────────────────────────────────────────────
-col_left, col_right = st.columns([1, 1], gap="large")
+# ─── Navbar Tabs ─────────────────────────────────────────────────────────────────
+tab_profile, tab_targets, tab_pipeline, tab_transmission = st.tabs([
+    "01 PROFILE", "02 TARGETS", "03 PIPELINE", "04 TRANSMISSION"
+])
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# LEFT COLUMN: CONFIGURATION & PIPELINE
+# TAB 1: PROFILE
 # ══════════════════════════════════════════════════════════════════════════════════
-with col_left:
+with tab_profile:
     st.markdown("### 01. PROFILE & IDENTITY")
+    
+    if PDF_AVAILABLE and LANGCHAIN_AVAILABLE:
+        with st.expander("RESUME AI AUTOFILL", expanded=True):
+            pdf_file = st.file_uploader("Upload PDF Resume for Auto-fill", type=["pdf"])
+            if pdf_file:
+                if st.button("PARSE RESUME WITH AI"):
+                    with st.spinner("Analyzing resume..."):
+                        reader = PdfReader(pdf_file)
+                        text = "\\n".join(page.extract_text() or "" for page in reader.pages)
+                        extracted = extract_profile_from_resume(text)
+                        
+                        if extracted:
+                            current_profile = load_profile()
+                            current_profile.name = extracted.get("name", current_profile.name)
+                            current_profile.title = extracted.get("title", current_profile.title)
+                            current_profile.institution = extracted.get("institution", current_profile.institution)
+                            current_profile.graduatingYear = extracted.get("graduatingYear", current_profile.graduatingYear)
+                            current_profile.github = extracted.get("github", current_profile.github)
+                            current_profile.linkedin = extracted.get("linkedin", current_profile.linkedin)
+                            current_profile.credentials = extracted.get("credentials", current_profile.credentials)
+                            save_profile(current_profile)
+                            st.success("PROFILE AUTO-FILLED SUCCESSFULLY!")
+                            st.rerun()
+    
     profile = load_profile()
     
-    with st.expander("SENDER PROFILE", expanded=False):
-        name         = st.text_input("Full Name",          value=profile.name,          placeholder="Ashish Singh")
-        sender_email = st.text_input("Your Email",         value=profile.senderEmail,   placeholder="ashish@example.com")
-        title        = st.text_input("Title / Role",       value=profile.title,         placeholder="Final Year Software Engineering Student")
-        institution  = st.text_input("Institution / Company", value=profile.institution, placeholder="GL Bajaj Institute of Technology, Noida")
-        grad_year    = st.text_input("Graduating / Since", value=profile.graduatingYear, placeholder="2027")
+    with st.expander("SENDER PROFILE", expanded=True):
+        name         = st.text_input("Full Name",          value=profile.name)
+        sender_email = st.text_input("Your Email",         value=profile.senderEmail)
+        title        = st.text_input("Target Job Title",   value=profile.title)
+        institution  = st.text_input("Institution / Company", value=profile.institution)
+        grad_year    = st.text_input("Graduating / Since", value=profile.graduatingYear)
 
-        github   = st.text_input("GitHub",   value=profile.github,   placeholder="github.com/yourusername")
-        linkedin = st.text_input("LinkedIn", value=profile.linkedin, placeholder="linkedin.com/in/yourprofile")
+        github   = st.text_input("GitHub",   value=profile.github)
+        linkedin = st.text_input("LinkedIn", value=profile.linkedin)
 
         creds_default = "\\n".join(profile.credentials) if profile.credentials else ""
         creds_text = st.text_area(
@@ -222,7 +295,8 @@ with col_left:
             height=150
         )
 
-        smtp_host = st.text_input("SMTP Host",     value=profile.smtpHost, placeholder="smtp.gmail.com")
+        st.markdown("**OPTIONAL: SMTP SETTINGS (For auto-sending)**")
+        smtp_host = st.text_input("SMTP Host",     value=profile.smtpHost)
         smtp_port = st.number_input("SMTP Port",   value=profile.smtpPort, min_value=1, max_value=65535, step=1)
         smtp_pass = st.text_input("SMTP Password / App Password", value=profile.smtpPassword, type="password")
 
@@ -243,15 +317,6 @@ with col_left:
             )
             save_profile(new_profile)
             st.success("PROFILE SAVED SUCCESSFULLY.")
-
-    if PDF_AVAILABLE:
-        with st.expander("RESUME PARSER"):
-            pdf_file = st.file_uploader("Upload PDF Resume", type=["pdf"])
-            if pdf_file:
-                reader = PdfReader(pdf_file)
-                text = "\\n".join(page.extract_text() or "" for page in reader.pages)
-                st.markdown("**EXTRACTED TEXT:**")
-                st.text_area("Resume Text", value=text, height=200, disabled=False)
     
     with st.expander("LIVE PERSONA PREVIEW"):
         preview_profile = UserProfile(
@@ -267,26 +332,26 @@ with col_left:
         persona_preview = build_persona_prompt(preview_profile)
         st.code(persona_preview or "NO DATA", language="text")
 
+# ══════════════════════════════════════════════════════════════════════════════════
+# TAB 2: TARGET COMPANIES
+# ══════════════════════════════════════════════════════════════════════════════════
+with tab_targets:
     st.markdown("### 02. TARGET COMPANIES")
     companies = load_companies()
     if "companies" not in st.session_state:
         st.session_state.companies = companies
     companies = st.session_state.companies
 
+    st.info("The agent will automatically scrape the web for job openings relevant to your profile.")
+
     with st.expander("ADD NEW TARGET"):
-        nc_col1, nc_col2 = st.columns(2)
-        new_name    = nc_col1.text_input("Company Name",      key="new_name")
-        new_domain  = nc_col2.text_input("Domain",            key="new_domain")
-        nc_col3, nc_col4 = st.columns(2)
-        new_industry = nc_col3.text_input("Industry",         key="new_industry")
-        new_desc    = nc_col4.text_input("Description",       key="new_desc")
-        new_email   = st.text_input("Recipient Email",        key="new_email")
+        new_name    = st.text_input("Company Name", key="new_name")
+        new_email   = st.text_input("Recipient Email (Optional)", key="new_email")
 
         if st.button("ADD TARGET", type="primary"):
             if new_name:
                 companies.append({
-                    "name": new_name, "domain": new_domain,
-                    "industry": new_industry, "description": new_desc,
+                    "name": new_name,
                     "recipientEmail": new_email
                 })
                 st.session_state.companies = companies
@@ -297,11 +362,7 @@ with col_left:
         with st.expander(f"TARGET: {company['name'].upper()}"):
             e1, e2 = st.columns(2)
             companies[i]["name"]           = e1.text_input("Name",    value=company["name"],           key=f"name_{i}")
-            companies[i]["domain"]         = e2.text_input("Domain",  value=company.get("domain",""),  key=f"domain_{i}")
-            e3, e4 = st.columns(2)
-            companies[i]["industry"]       = e3.text_input("Industry",     value=company.get("industry",""),     key=f"ind_{i}")
-            companies[i]["description"]    = e4.text_input("Description",  value=company.get("description",""),  key=f"desc_{i}")
-            companies[i]["recipientEmail"] = st.text_input("Recipient Email", value=company.get("recipientEmail",""), key=f"email_{i}")
+            companies[i]["recipientEmail"] = e2.text_input("Recipient Email", value=company.get("recipientEmail",""), key=f"email_{i}")
 
             if st.button("REMOVE TARGET", key=f"remove_{i}"):
                 companies.pop(i)
@@ -314,88 +375,85 @@ with col_left:
         save_companies(companies)
         st.success("TARGET LIST SAVED.")
 
-    st.markdown("### 03. PIPELINE EXECUTION")
-    b_col1, b_col2 = st.columns(2)
-    global_budget = b_col1.number_input("Global Budget (USD)", value=0.10, min_value=0.01, step=0.01, format="%.3f")
-    per_cap       = b_col2.number_input("Per-Company Cap (USD)", value=0.012, min_value=0.001, step=0.001, format="%.3f")
+# ══════════════════════════════════════════════════════════════════════════════════
+# TAB 3: PIPELINE EXECUTION
+# ══════════════════════════════════════════════════════════════════════════════════
+with tab_pipeline:
+    st.markdown("### 03. PIPELINE EXECUTION & METRICS")
     
-    if st.button("EXECUTE SCOUT PIPELINE", type="primary", use_container_width=True):
-        save_companies(st.session_state.companies)
-        with st.spinner("INITIATING PIPELINE SEQUENCE..."):
-            py_cmd = "py" if os.name == "nt" else "python3"
-            result = subprocess.run(
-                [py_cmd, "main.py",
-                 "--global-budget", str(global_budget),
-                 "--per-cap", str(per_cap)],
-                capture_output=True, text=True, cwd=os.getcwd()
-            )
-        if result.returncode == 0:
-            st.success("PIPELINE EXECUTION COMPLETE.")
-            st.rerun()
-        else:
-            st.error("PIPELINE ENCOUNTERED AN ERROR.")
-            st.code(result.stderr[-3000:] if result.stderr else "NO ERROR OUTPUT", language="bash")
-
-
-# ══════════════════════════════════════════════════════════════════════════════════
-# RIGHT COLUMN: RESULTS & EMAIL SENDING
-# ══════════════════════════════════════════════════════════════════════════════════
-with col_right:
-    st.markdown("### 04. LEDGER & METRICS")
-    if st.button("REFRESH DATA LOGS", key="refresh_results"):
-        st.rerun()
-
-    ledger = load_json("scout_ledger.json")
-    emails = load_json("scout_emails.json")
-    meta   = load_json("scout_meta_analysis.json")
-
-    if not ledger:
-        st.info("NO DATA AVAILABLE. EXECUTE PIPELINE TO GENERATE LOGS.")
-    else:
-        total_spent = sum(c.get("totalCostUSD", 0) for c in ledger.values())
-        emails_gen  = len([c for c in ledger.values() if c.get("email")])
-        exceeded    = sum(1 for c in ledger.values() if c.get("budgetStatus") == "exceeded")
-        skipped     = sum(1 for c in ledger.values() if c.get("decision") == "skipped")
-
-        m1, m2, m3, m4 = st.columns(4)
-        with m1: metric_card("TOTAL SPENT", f"${total_spent:.4f}")
-        with m2: metric_card("COMPANIES", str(len(ledger)))
-        with m3: metric_card("EMAILS GEN", str(emails_gen))
-        with m4: metric_card("EXCEEDED", str(exceeded))
-
-        with st.expander("RAW LEDGER DATAFRAME"):
-            rows = []
-            for company, d in ledger.items():
-                rows.append({
-                    "COMPANY":         company,
-                    "SPENT":           f"${d.get('totalCostUSD',0):.4f}",
-                    "DECISION":        str(d.get("decision","--")).upper(),
-                    "STATUS":          str(d.get("budgetStatus","--")).upper(),
-                    "EMAIL":           "YES" if d.get("email") else "NO",
-                    "TOP SIGNAL":      (d.get("signals") or ["--"])[0][:30],
-                })
-            df = pd.DataFrame(rows)
-            st.dataframe(df, use_container_width=True, hide_index=True)
-
-        with st.expander("META ANALYSIS"):
-            if not meta:
-                st.caption("NO META ANALYSIS AVAILABLE.")
+    col_exec, col_metrics = st.columns([1, 2], gap="large")
+    
+    with col_exec:
+        st.markdown("#### LAUNCH SEQUENCE")
+        global_budget = st.number_input("Global Budget (USD)", value=0.10, min_value=0.01, step=0.01, format="%.3f")
+        per_cap       = st.number_input("Per-Company Cap (USD)", value=0.012, min_value=0.001, step=0.001, format="%.3f")
+        
+        if st.button("EXECUTE SCOUT PIPELINE", type="primary", use_container_width=True):
+            save_companies(st.session_state.companies)
+            with st.spinner("INITIATING PIPELINE SEQUENCE..."):
+                py_cmd = "py" if os.name == "nt" else "python3"
+                result = subprocess.run(
+                    [py_cmd, "main.py",
+                     "--global-budget", str(global_budget),
+                     "--per-cap", str(per_cap)],
+                    capture_output=True, text=True, cwd=os.getcwd()
+                )
+            if result.returncode == 0:
+                st.success("PIPELINE EXECUTION COMPLETE.")
+                st.rerun()
             else:
-                st.markdown(f"**RICHEST SIGNAL:** `{meta.get('richest_signal_company','--')}`")
-                st.markdown(f"**MOST LIKELY TO RESPOND:** `{meta.get('most_likely_to_respond','--')}`")
-                recs = meta.get("re_research_recommendations", [])
-                if recs:
-                    st.markdown("**RE-RESEARCH TARGETS:**")
-                    for r in recs:
-                        st.markdown(f"- {r}")
+                st.error("PIPELINE ENCOUNTERED AN ERROR.")
+                st.code(result.stderr[-3000:] if result.stderr else "NO ERROR OUTPUT", language="bash")
 
-    st.markdown("### 05. TRANSMISSION TERMINAL")
+    with col_metrics:
+        st.markdown("#### LEDGER & METRICS")
+        if st.button("REFRESH DATA LOGS", key="refresh_results"):
+            st.rerun()
+
+        ledger = load_json("scout_ledger.json")
+        meta   = load_json("scout_meta_analysis.json")
+
+        if not ledger:
+            st.info("NO DATA AVAILABLE. EXECUTE PIPELINE TO GENERATE LOGS.")
+        else:
+            total_spent = sum(c.get("totalCostUSD", 0) for c in ledger.values())
+            emails_gen  = len([c for c in ledger.values() if c.get("email")])
+            exceeded    = sum(1 for c in ledger.values() if c.get("budgetStatus") == "exceeded")
+
+            m1, m2, m3, m4 = st.columns(4)
+            with m1: metric_card("TOTAL SPENT", f"${total_spent:.4f}")
+            with m2: metric_card("COMPANIES", str(len(ledger)))
+            with m3: metric_card("EMAILS GEN", str(emails_gen))
+            with m4: metric_card("EXCEEDED", str(exceeded))
+
+            with st.expander("RAW LEDGER DATAFRAME"):
+                rows = []
+                for company, d in ledger.items():
+                    rows.append({
+                        "COMPANY":         company,
+                        "SPENT":           f"${d.get('totalCostUSD',0):.4f}",
+                        "DECISION":        str(d.get("decision","--")).upper(),
+                        "STATUS":          str(d.get("budgetStatus","--")).upper(),
+                        "EMAIL":           "YES" if d.get("email") else "NO",
+                        "TOP SIGNAL":      (d.get("signals") or ["--"])[0][:30],
+                    })
+                df = pd.DataFrame(rows)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# TAB 4: TRANSMISSION
+# ══════════════════════════════════════════════════════════════════════════════════
+with tab_transmission:
+    st.markdown("### 04. TRANSMISSION TERMINAL")
+    emails = load_json("scout_emails.json")
+    
     if not emails:
         st.info("NO EMAILS PENDING TRANSMISSION.")
     else:
         subject_template = st.text_input(
             "Subject Template",
-            value="quick question — {company}",
+            value="Application for Role — {company}",
         )
         
         if "send_status" not in st.session_state:
@@ -424,34 +482,37 @@ with col_right:
                     key=f"body_{company}"
                 )
 
-                send_this = st.checkbox("Include in batch transmission", value=select_all, key=f"sel_{company}")
+                has_smtp = bool(profile.senderEmail and profile.smtpPassword)
+                
+                if not has_smtp:
+                    st.info("SMTP Credentials missing. Copy the email above and send it manually via your email client.")
+                    st.code(f"To: {recipient}\\nSubject: {final_subject}\\n\\n{edited_email}", language="text")
+                else:
+                    send_this = st.checkbox("Include in batch transmission", value=select_all, key=f"sel_{company}")
 
-                if st.button(f"TRANSMIT TO {company.upper()}", key=f"send_{company}"):
-                    if not recipient:
-                        st.warning("RECIPIENT EMAIL REQUIRED.")
-                    elif not profile.senderEmail or not profile.smtpPassword:
-                        st.warning("SMTP CREDENTIALS MISSING IN SENDER PROFILE.")
-                    else:
-                        with st.spinner(f"TRANSMITTING TO {recipient}..."):
-                            ok, msg = send_cold_email(
-                                smtp_host=profile.smtpHost,
-                                smtp_port=int(profile.smtpPort),
-                                sender_email=profile.senderEmail,
-                                sender_password=profile.smtpPassword,
-                                recipient_email=recipient,
-                                subject=final_subject,
-                                body=edited_email
-                            )
-                        st.session_state.send_status[company] = ok
-                        if ok:
-                            st.success(f"TRANSMISSION SUCCESSFUL: {msg}")
+                    if st.button(f"TRANSMIT TO {company.upper()}", key=f"send_{company}"):
+                        if not recipient:
+                            st.warning("RECIPIENT EMAIL REQUIRED.")
                         else:
-                            st.error(f"TRANSMISSION FAILED: {msg}")
+                            with st.spinner(f"TRANSMITTING TO {recipient}..."):
+                                ok, msg = send_cold_email(
+                                    smtp_host=profile.smtpHost,
+                                    smtp_port=int(profile.smtpPort),
+                                    sender_email=profile.senderEmail,
+                                    sender_password=profile.smtpPassword,
+                                    recipient_email=recipient,
+                                    subject=final_subject,
+                                    body=edited_email
+                                )
+                            st.session_state.send_status[company] = ok
+                            if ok:
+                                st.success(f"TRANSMISSION SUCCESSFUL: {msg}")
+                            else:
+                                st.error(f"TRANSMISSION FAILED: {msg}")
 
-        if st.button("BATCH TRANSMIT SELECTED", type="primary", use_container_width=True):
-            if not profile.senderEmail or not profile.smtpPassword:
-                st.error("SMTP CREDENTIALS MISSING IN SENDER PROFILE.")
-            else:
+        has_smtp = bool(profile.senderEmail and profile.smtpPassword)
+        if has_smtp:
+            if st.button("BATCH TRANSMIT SELECTED", type="primary", use_container_width=True):
                 selected = [c for c in emails if st.session_state.get(f"sel_{c}", False)]
                 if not selected:
                     st.warning("NO TARGETS SELECTED FOR BATCH TRANSMISSION.")
