@@ -3,6 +3,8 @@
 SCOUT is a budget-aware company research and cold outreach AI agent built with [LangGraph](https://python.langchain.com/docs/langgraph/). It intelligently regulates its own search depth and email generation cost based on a configurable global budget and per-company caps.
 
 This project serves as a practical demonstration of budget-aware AI agents, where the LLM itself is granted the ability to check remaining spend allocations mid-generation and adjust its token output accordingly.
+<img width="1771" height="718" alt="image" src="https://github.com/user-attachments/assets/f1aebead-f44e-41c0-93bb-a018105cafd6" />
+
 
 ## Features
 
