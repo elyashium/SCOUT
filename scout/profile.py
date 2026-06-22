@@ -12,6 +12,7 @@ class UserProfile(BaseModel):
     title: str = ""
     institution: str = ""
     graduatingYear: str = ""
+    mobileNumber: str = ""
     credentials: List[str] = []
     github: str = ""
     linkedin: str = ""

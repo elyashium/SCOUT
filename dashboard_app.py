@@ -222,6 +222,8 @@ def extract_profile_from_resume(text: str) -> dict:
         - "title": current or target job title
         - "institution": current company or university
         - "graduatingYear": year of graduation if applicable
+        - "email": email address
+        - "mobileNumber": phone or mobile number
         - "github": github url
         - "linkedin": linkedin url
         - "credentials": list of top 3-5 impressive projects, achievements, or roles (max 15 words each)
@@ -273,34 +275,49 @@ with tab_profile:
                         
                         if extracted:
                             current_profile = load_profile()
-                            current_profile.name = extracted.get("name", current_profile.name)
-                            current_profile.title = extracted.get("title", current_profile.title)
-                            current_profile.institution = extracted.get("institution", current_profile.institution)
-                            current_profile.graduatingYear = extracted.get("graduatingYear", current_profile.graduatingYear)
-                            current_profile.github = extracted.get("github", current_profile.github)
-                            current_profile.linkedin = extracted.get("linkedin", current_profile.linkedin)
-                            current_profile.credentials = extracted.get("credentials", current_profile.credentials)
+                            current_profile.name = extracted.get("name") or current_profile.name or ""
+                            current_profile.title = extracted.get("title") or current_profile.title or ""
+                            current_profile.institution = extracted.get("institution") or current_profile.institution or ""
+                            current_profile.graduatingYear = str(extracted.get("graduatingYear") or current_profile.graduatingYear or "")
+                            current_profile.senderEmail = extracted.get("email") or current_profile.senderEmail or ""
+                            current_profile.mobileNumber = extracted.get("mobileNumber") or current_profile.mobileNumber or ""
+                            current_profile.github = extracted.get("github") or current_profile.github or ""
+                            current_profile.linkedin = extracted.get("linkedin") or current_profile.linkedin or ""
+                            current_profile.credentials = extracted.get("credentials") or current_profile.credentials or []
                             save_profile(current_profile)
+                            
+                            st.session_state.prof_name = current_profile.name
+                            st.session_state.prof_title = current_profile.title
+                            st.session_state.prof_inst = current_profile.institution
+                            st.session_state.prof_grad = current_profile.graduatingYear
+                            st.session_state.prof_email = current_profile.senderEmail
+                            st.session_state.prof_mobile = current_profile.mobileNumber
+                            st.session_state.prof_git = current_profile.github
+                            st.session_state.prof_li = current_profile.linkedin
+                            st.session_state.prof_creds = "\n".join(current_profile.credentials)
+
                             st.success("PROFILE AUTO-FILLED SUCCESSFULLY!")
                             st.rerun()
     
     profile = load_profile()
     
     with st.expander("SENDER PROFILE", expanded=True):
-        name         = st.text_input("Full Name",          value=profile.name)
-        sender_email = st.text_input("Your Email",         value=profile.senderEmail)
-        title        = st.text_input("Target Job Title",   value=profile.title)
-        institution  = st.text_input("Institution / Company", value=profile.institution)
-        grad_year    = st.text_input("Graduating / Since", value=profile.graduatingYear)
+        name         = st.text_input("Full Name",          value=st.session_state.get("prof_name", profile.name), key="prof_name")
+        sender_email = st.text_input("Your Email",         value=st.session_state.get("prof_email", profile.senderEmail), key="prof_email")
+        mobile_num   = st.text_input("Mobile Number",      value=st.session_state.get("prof_mobile", profile.mobileNumber), key="prof_mobile")
+        title        = st.text_input("Target Job Title",   value=st.session_state.get("prof_title", profile.title), key="prof_title")
+        institution  = st.text_input("Institution / Company", value=st.session_state.get("prof_inst", profile.institution), key="prof_inst")
+        grad_year    = st.text_input("Graduating / Since", value=st.session_state.get("prof_grad", profile.graduatingYear), key="prof_grad")
 
-        github   = st.text_input("GitHub",   value=profile.github)
-        linkedin = st.text_input("LinkedIn", value=profile.linkedin)
+        github   = st.text_input("GitHub",   value=st.session_state.get("prof_git", profile.github), key="prof_git")
+        linkedin = st.text_input("LinkedIn", value=st.session_state.get("prof_li", profile.linkedin), key="prof_li")
 
-        creds_default = "\\n".join(profile.credentials) if profile.credentials else ""
+        creds_default = "\n".join(profile.credentials) if profile.credentials else ""
         creds_text = st.text_area(
             "Credentials (one per line)",
-            value=creds_default,
-            height=150
+            value=st.session_state.get("prof_creds", creds_default),
+            height=150,
+            key="prof_creds"
         )
 
         st.markdown("**OPTIONAL: SMTP SETTINGS (For auto-sending)**")
@@ -313,6 +330,7 @@ with tab_profile:
                 name=name,
                 firstName=name.split()[0] if name else "",
                 senderEmail=sender_email,
+                mobileNumber=mobile_num,
                 title=title,
                 institution=institution,
                 graduatingYear=grad_year,

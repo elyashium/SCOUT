@@ -18,16 +18,16 @@ def render_dashboard(ledger: SpendLedger):
     for _, spend in ledger.ledger.items():
         util_pct = (spend.totalCostUSD / ledger.perCompanyCapUSD) * 100 if ledger.perCompanyCapUSD else 0
         
-        status_emoji = "✓"
+        status_emoji = "[OK]"
         color = "green"
         if spend.budgetStatus == "warned":
-            status_emoji = "⚠"
+            status_emoji = "[WARN]"
             color = "yellow"
         elif spend.budgetStatus == "exceeded":
-            status_emoji = "✗"
+            status_emoji = "[FAIL]"
             color = "red"
         elif spend.budgetStatus == "skipped":
-            status_emoji = "⏭"
+            status_emoji = "[SKIP]"
             color = "bright_black"
             
         status_str = f"[{color}]{status_emoji} {spend.budgetStatus}[/{color}]"

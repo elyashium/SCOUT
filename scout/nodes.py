@@ -104,6 +104,10 @@ async def researcher_node(state: AgentState) -> Dict[str, Any]:
         api_key=os.environ.get("GROQ_API_KEY")
     )
     
+    results_str = json.dumps(search_results)
+    if len(results_str) > 15000:
+        results_str = results_str[:15000] + '... [TRUNCATED DUE TO LENGTH]'
+
     prompt = f"""
     You are a career researcher. Analyze these web search results for "{company_name}".
     Your goal is to extract intelligence that will be used to write a highly targeted cold email or DM for a candidate seeking a "{job_title}" position.
@@ -119,7 +123,7 @@ async def researcher_node(state: AgentState) -> Dict[str, Any]:
     Return ONLY a valid JSON object with keys: "summary" (string), "signals" (list of strings), "signalConfidence" (list of floats).
     
     Search Results:
-    {json.dumps(search_results)}
+    {results_str}
     """
     
     try:

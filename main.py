@@ -61,6 +61,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     run_scout(
+        companies=None,
         global_budget_usd=args.global_budget,
         per_company_cap_usd=args.per_cap
     )

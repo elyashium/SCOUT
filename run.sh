@@ -21,8 +21,6 @@ echo "Installing requirements..."
 $PYTHON_CMD -m pip install --upgrade pip
 $PYTHON_CMD -m pip install -r requirements.txt
 
-echo "Running SCOUT Agent..."
-$PYTHON_CMD main.py
 
 echo "Launching Dashboard..."
 $PYTHON_CMD -m streamlit run dashboard_app.py
