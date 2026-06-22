@@ -3,9 +3,10 @@ import json
 from datetime import datetime
 from typing import Dict, Any, List
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
+from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 from tavily import TavilyClient
+from scout.profile import load_profile, build_persona_prompt
 
 from scout.state import (
     AgentState, CompanySpend, 
@@ -97,7 +98,13 @@ async def researcher_node(state: AgentState) -> Dict[str, Any]:
             "errors": errors
         }
         
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    llm = ChatGroq(
+        model="openai/gpt-oss-20b",
+        temperature=1,
+        max_tokens=8192,
+        top_p=1,
+        model_kwargs={"reasoning_effort": "medium"}
+    )
     
     prompt = f"""
     You are a researcher. Analyze these search results for {company_name}.
@@ -202,7 +209,11 @@ async def writer_node(state: AgentState) -> Dict[str, Any]:
         if conf >= 0.6:
             high_conf_signals.append(sig)
             
-    default_persona = (
+    # Load persona dynamically from scout_profile.json
+    # Falls back to hardcoded Ashish Singh credentials if no profile is saved
+    profile = load_profile()
+    dynamic_persona = build_persona_prompt(profile)
+    hardcoded_fallback = (
         "you are writing a cold outreach email on behalf of ashish singh, "
         "a final year software engineering student at gl bajaj institute of technology (noida), graduating 2027.\n\n"
         "ashish's credentials:\n"
@@ -212,8 +223,7 @@ async def writer_node(state: AgentState) -> Dict[str, Any]:
         "- built skydra: autonomous two-drone system for nidar 2025, cuda-accelerated yolov8 + sensor fusion\n"
         "- github: github.com/elyashium | linkedin: linkedin.com/in/ashish-singh-5818a6274"
     )
-    
-    persona = state.get("persona_override") or default_persona
+    persona = state.get("persona_override") or dynamic_persona or hardcoded_fallback
     
     system_prompt = f"""
 {persona}
@@ -250,7 +260,13 @@ High confidence signals to use: {json.dumps(high_conf_signals)}
             "recommendation": "be_concise" if remaining < 0.003 else "be_thorough"
         }
         
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.7, max_tokens=max_tokens)
+    llm = ChatGroq(
+        model="openai/gpt-oss-20b",
+        temperature=1,
+        max_tokens=max_tokens,
+        top_p=1,
+        model_kwargs={"reasoning_effort": "medium"}
+    )
     llm_with_tools = llm.bind_tools([check_remaining_budget])
     
     email_content = None

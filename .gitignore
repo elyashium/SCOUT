@@ -5,3 +5,6 @@ __pycache__/
 scout_ledger.json
 scout_emails.json
 scout_meta_analysis.json
+scout_profile.json
+scout_companies.json
+venv/

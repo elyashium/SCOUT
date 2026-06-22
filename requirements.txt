@@ -5,3 +5,6 @@ tavily-python
 rich
 pydantic
 python-dotenv
+langchain-groq
+streamlit
+pypdf
